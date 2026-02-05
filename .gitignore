@@ -1,0 +1,12 @@
+.venv
+*.pyc
+.env
+.langgraph_api
+.next
+node_modules
+.DS_Store
+*.egg-info/
+__pycache__/
+
+# Large sample files
+data

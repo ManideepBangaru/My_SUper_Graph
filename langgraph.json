@@ -1,0 +1,15 @@
+{
+    "dependencies": ["."],
+    "graphs": {
+      "Lumos_Super_Graph": {
+        "path": "src/graphs/graph.py:Lumos_Super_Graph",
+        "description": "A workflow that identifies the domain of the user's question and responds Appropriately"
+      }
+    },
+    "store": {
+      "postgres": {
+        "uri_env_var": "POSTGRES_URI"
+      }
+    },
+    "env": ".env"
+  }
