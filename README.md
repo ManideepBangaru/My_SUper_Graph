@@ -1,12 +1,12 @@
 # Lumos Graph 🎮✨
 
-A multi-agent architecture powered by **LangGraph** for intelligent gaming analytics. This system routes user queries to specialized agents using LLM-driven decision making, featuring a modern ChatGPT-style web interface.
+A multi-agent architecture powered by **LangGraph** for intelligent gaming analytics with multimodal document understanding. This system routes user queries to specialized agents using LLM-driven decision making, featuring a modern ChatGPT-style web interface with document upload and visual comprehension capabilities.
 
 ---
 
 ## Overview
 
-Lumos Graph is designed to enhance conversational AI capabilities for gaming analytics by implementing an intelligent routing system. Instead of hardcoded rules or regex patterns, queries are classified and routed using LLM-based structured outputs, enabling natural and context-aware interactions.
+Lumos Graph is designed to enhance conversational AI capabilities for gaming analytics by implementing an intelligent routing system. Instead of hardcoded rules or regex patterns, queries are classified and routed using LLM-based structured outputs, enabling natural and context-aware interactions. The system now supports **multimodal conversations** with PDF and PowerPoint documents, extracting both text and images for comprehensive document understanding.
 
 ### Key Features
 
@@ -18,6 +18,10 @@ Lumos Graph is designed to enhance conversational AI capabilities for gaming ana
 - **⏪ Time Travel** — Replay and inspect conversation states via LangGraph checkpointing
 - **🎯 Domain Gating** — Only gaming-related queries are processed; others receive a friendly rejection
 - **📱 Responsive Design** — Mobile-friendly interface with collapsible sidebar
+- **📄 Document Processing** — PDF and PPTX file upload with automatic text extraction and chunking
+- **🖼️ Multimodal Understanding** — Images extracted from documents are passed to vision-capable LLMs (Gemini)
+- **☁️ S3 File Storage** — AWS S3 integration with SSO authentication for file persistence
+- **🔄 Image Caching** — Extracted images cached in conversation state to avoid re-fetching
 
 ---
 
@@ -30,10 +34,11 @@ Lumos Graph is designed to enhance conversational AI capabilities for gaming ana
 │  │   Sidebar    │  │              Chat Window                    │  │
 │  │  - Threads   │  │  ┌────────────────────────────────────┐    │  │
 │  │  - New Chat  │  │  │     Messages (Markdown)            │    │  │
-│  │              │  │  │     - Streaming responses          │    │  │
+│  │  - Timeline  │  │  │     - Streaming responses          │    │  │
+│  │              │  │  │     - File attachments             │    │  │
 │  │              │  │  └────────────────────────────────────┘    │  │
 │  │              │  │  ┌────────────────────────────────────┐    │  │
-│  │              │  │  │         Input Area                 │    │  │
+│  │              │  │  │   Input Area + File Upload         │    │  │
 │  └──────────────┘  │  └────────────────────────────────────┘    │  │
 └────────────────────┴────────────────────────────────────────────────┘
                                     │
@@ -42,27 +47,31 @@ Lumos Graph is designed to enhance conversational AI capabilities for gaming ana
 ┌─────────────────────────────────────────────────────────────────────┐
 │                       Backend (FastAPI)                              │
 │  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  │
-│  │   /api/chat      │  │  /api/threads    │  │   /api/health    │  │
-│  │   (SSE Stream)   │  │  (CRUD)          │  │                  │  │
-│  └────────┬─────────┘  └────────┬─────────┘  └──────────────────┘  │
-└───────────┼─────────────────────┼───────────────────────────────────┘
-            │                     │
-            ▼                     ▼
+│  │   /api/chat      │  │  /api/threads    │  │   /api/files     │  │
+│  │   /api/chat/fork │  │  (CRUD)          │  │   (Upload/DL)    │  │
+│  │   (SSE Stream)   │  │                  │  │                  │  │
+│  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘  │
+└───────────┼─────────────────────┼─────────────────────┼─────────────┘
+            │                     │                     │
+            ▼                     ▼                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         LangGraph Engine                             │
 │  ┌─────────────────────────────┐    ┌─────────────────────────────┐ │
 │  │  Domain Identifier Agent    │───▶│      Convo Agent            │ │
-│  │  (Gaming Classification)    │    │  (Gaming Responses)         │ │
-│  └─────────────────────────────┘    └─────────────────────────────┘ │
+│  │  (Gaming Classification)    │    │  (Multimodal Responses)     │ │
+│  └─────────────────────────────┘    │  - Text + Image Context     │ │
+│                                     │  - Document Understanding   │ │
+│                                     └─────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────┘
-                                    │
-                                    ▼
-                          ┌─────────────────┐
-                          │   PostgreSQL    │
-                          │  - Checkpoints  │
-                          │  - Messages     │
-                          │  - Threads      │
-                          └─────────────────┘
+            │                     │                     │
+            ▼                     ▼                     ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   PostgreSQL    │     │     AWS S3      │     │  Document       │
+│  - Checkpoints  │     │  - PDF/PPTX     │     │  Processing     │
+│  - Messages     │     │  - Images       │     │  - Text chunks  │
+│  - Threads      │     │  - Attachments  │     │  - Image extract│
+│  - Doc Chunks   │     │                 │     │                 │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
 ### Current Agents
@@ -70,7 +79,17 @@ Lumos Graph is designed to enhance conversational AI capabilities for gaming ana
 | Agent | Purpose |
 |-------|---------|
 | **DomainIdentifierAgent** | Classifies if query is gaming-related using structured LLM output |
-| **ConvoAgent** | Responds to gaming queries conversationally with gaming terminology |
+| **ConvoAgent** | Responds to queries with multimodal context (text + images from documents) |
+
+### Document Processing Pipeline
+
+| Stage | Description |
+|-------|-------------|
+| **Upload** | PDF/PPTX files uploaded to S3 via `/api/files/upload` |
+| **Processing** | Background task extracts text (chunked) and images |
+| **Storage** | Text chunks stored in PostgreSQL, images in S3 |
+| **Context** | Chunks loaded into conversation state for LLM context |
+| **Multimodal** | Images converted to base64 and passed to vision LLM |
 
 ### Planned Data Sources
 
@@ -89,9 +108,13 @@ Lumos Graph is designed to enhance conversational AI capabilities for gaming ana
 - **LangGraph** — Agent orchestration and state management
 - **LangChain** — LLM abstractions and tool integrations
 - **FastAPI** — High-performance REST API with SSE streaming
-- **PostgreSQL** — Checkpoint storage, message history, and thread management
+- **PostgreSQL** — Checkpoint storage, message history, thread management, and document chunks
+- **AWS S3** — File storage with SSO authentication (boto3)
+- **PyMuPDF** — PDF text and image extraction
+- **python-pptx** — PowerPoint text and image extraction
 - **Pydantic** — Structured outputs and state validation
 - **Python 3.11+** — Modern async/await patterns
+- **Google Gemini** — Vision-capable LLM for multimodal understanding
 
 ### Frontend
 - **Next.js 16** — React framework with App Router
@@ -109,24 +132,29 @@ Lumos_Graph/
 ├── src/
 │   ├── api/                          # FastAPI Backend
 │   │   ├── main.py                   # FastAPI app with CORS and routes
-│   │   ├── database.py               # PostgreSQL utilities
+│   │   ├── database.py               # PostgreSQL utilities (threads, messages, doc_chunks)
 │   │   └── routes/
-│   │       ├── chat.py               # SSE streaming chat endpoint
+│   │       ├── chat.py               # SSE streaming chat + fork endpoint
+│   │       ├── files.py              # File upload/download to S3
 │   │       └── threads.py            # Thread CRUD operations
 │   ├── graphs/
 │   │   └── graph.py                  # Main graph definition with routing
 │   ├── nodes/
-│   │   ├── ConvoNode.py              # Conversational response agent
+│   │   ├── ConvoNode.py              # Multimodal conversational agent
 │   │   └── DomainIdentifierNode.py   # Gaming query classifier
 │   ├── schemas/
 │   │   ├── ConvoAgentSchema.py       # Pydantic schema for convo output
 │   │   └── DomainIdentiferAgentSchema.py  # Classification schema
 │   ├── state/
-│   │   └── state.py                  # MainGraphState with reducers
+│   │   └── state.py                  # MainGraphState with document_context & cached_images
 │   ├── utils/
 │   │   ├── message_logger.py         # Human-readable PostgreSQL logging
+│   │   ├── pdf_processor.py          # PDF text/image extraction + chunking
+│   │   ├── pptx_processor.py         # PPTX text/image extraction + chunking
+│   │   ├── s3_operations.py          # AWS S3 file upload/download with SSO
+│   │   ├── image_utils.py            # S3 image fetching + base64 conversion
 │   │   └── read_yaml.py              # YAML configuration utilities
-│   └── test.py                       # Standalone test runner
+│   └── main.py                       # Standalone test runner
 ├── frontend/                         # Next.js Frontend
 │   ├── src/
 │   │   ├── app/
@@ -136,10 +164,11 @@ Lumos_Graph/
 │   │   ├── components/
 │   │   │   ├── ChatWindow.tsx        # Main chat area with messages
 │   │   │   ├── MessageBubble.tsx     # Message display with markdown
-│   │   │   ├── InputArea.tsx         # Auto-resizing input with send
-│   │   │   └── Sidebar.tsx           # Thread history sidebar
+│   │   │   ├── InputArea.tsx         # Auto-resizing input with file upload
+│   │   │   ├── Sidebar.tsx           # Thread history sidebar
+│   │   │   └── TimelinePanel.tsx     # Time travel / checkpoint navigation
 │   │   ├── hooks/
-│   │   │   └── useChat.ts            # SSE streaming hook
+│   │   │   └── useChat.ts            # SSE streaming hook with progress events
 │   │   └── lib/
 │   │       └── api.ts                # API client functions
 │   ├── package.json
@@ -192,8 +221,17 @@ Lumos_Graph/
    
    Create a `.env` file in the project root:
    ```env
-   GOOGLE_MODEL=your-google-model-name
-   POSTGRES_URI=postgresql://user:password@localhost:5432/lumos_graph_db
+   # LLM Configuration
+   GOOGLE_API_KEY=your-google-api-key
+   GOOGLE_MODEL=google_genai:gemini-flash-lite-latest
+   
+   # PostgreSQL Database
+   POSTGRES_URI=postgresql://user:password@localhost:5432/super_graph_db
+   
+   # AWS S3 Configuration (for file storage)
+   AWS_PROFILE=your-sso-profile          # AWS SSO profile name
+   S3_BUCKET_NAME=your-bucket-name       # S3 bucket for file storage
+   S3_PREFIX=lumos-graph                 # Optional prefix for S3 keys
    ```
 
 ### Running the Application
@@ -233,18 +271,35 @@ This starts the LangGraph Studio UI at `http://127.0.0.1:2024` with hot-reloadin
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `POST` | `/api/chat` | Send message and receive SSE stream |
+| `POST` | `/api/chat/fork` | Fork from a checkpoint (time travel) and continue |
 
-**Request Body:**
+**Chat Request Body:**
 ```json
 {
   "message": "Tell me about Elden Ring",
   "thread_id": "uuid-string",
-  "user_id": "user_123"
+  "user_id": "user_123",
+  "attachments": [
+    {"filename": "guide.pdf", "size": 12345, "s3_key": "..."}
+  ]
+}
+```
+
+**Fork Request Body:**
+```json
+{
+  "message": "Actually, tell me about Dark Souls instead",
+  "thread_id": "uuid-string",
+  "user_id": "user_123",
+  "checkpoint_id": "checkpoint-uuid",
+  "attachments": []
 }
 ```
 
 **SSE Events:**
 ```
+data: {"type": "progress", "content": {"Progress": "Document read completed ..."}}
+data: {"type": "progress", "content": {"Progress": "Visually understanding the document ..."}}
 data: {"type": "token", "content": "Elden"}
 data: {"type": "token", "content": " Ring"}
 data: {"type": "token", "content": " is"}
@@ -261,6 +316,36 @@ data: {"type": "done"}
 | `GET` | `/api/threads/{id}/messages` | Get messages for a thread |
 | `PATCH` | `/api/threads/{id}` | Update thread title |
 | `DELETE` | `/api/threads/{id}` | Delete thread and messages |
+
+### File Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/files/upload` | Upload PDF/PPTX files to S3 |
+| `GET` | `/api/files/{user_id}/{thread_id}` | List files for a thread |
+| `GET` | `/api/files/{user_id}/{thread_id}/{filename}` | Download a file |
+| `GET` | `/api/files/{user_id}/{thread_id}/{filename}/url` | Get presigned download URL |
+| `GET` | `/api/files/{user_id}/{thread_id}/{filename}/status` | Check processing status |
+| `DELETE` | `/api/files/{user_id}/{thread_id}/{filename}` | Delete file and chunks |
+
+**Upload Request (multipart/form-data):**
+```
+files: [file1.pdf, file2.pptx]
+user_id: "user_123"
+thread_id: "uuid-string"
+```
+
+**Upload Response:**
+```json
+{
+  "uploaded": [
+    {"filename": "guide.pdf", "key": "prefix/user_123/thread_id/guide.pdf", "size": 12345}
+  ],
+  "success_count": 1,
+  "error_count": 0,
+  "processing_triggered": 1
+}
+```
 
 ---
 
@@ -291,8 +376,21 @@ def add_to_conversation(existing: List[str], new: List[str]) -> List[str]:
 class MainGraphState(TypedDict):
     messages: Annotated[List[AnyMessage], add_messages]  # LangChain messages
     conversation_history: Annotated[List[str], add_to_conversation]  # String history
+    document_context: Optional[List[dict]]  # Processed PDF/PPTX chunks for context
+    cached_images: Optional[dict]  # Cached base64 images keyed by "filename:page_num"
     Approval: Optional[bool]  # Gaming classification result
 ```
+
+### Document Context Flow
+
+When a user uploads a PDF or PPTX file:
+
+1. **Upload**: File is stored in S3 under `{prefix}/{user_id}/{thread_id}/{filename}`
+2. **Background Processing**: Extracts text (chunked with overlap) and images
+3. **Storage**: Text chunks → PostgreSQL `document_chunks` table; Images → S3
+4. **Chat Request**: Chunks are loaded into `document_context` state
+5. **Multimodal**: If chunks contain images, they're fetched from S3 and converted to base64
+6. **Caching**: Images are stored in `cached_images` state to avoid re-fetching
 
 ### Real-Time Streaming
 
@@ -329,6 +427,30 @@ await graph.ainvoke({"messages": [{"role": "user", "content": "Hi!"}]}, config)
 await graph.ainvoke({"messages": [{"role": "user", "content": "What about Elden Ring?"}]}, config)
 ```
 
+### Multimodal Document Understanding
+
+The ConvoAgent supports multimodal conversations when documents contain images:
+
+```python
+# When document_context contains chunks with image_keys:
+if has_images and document_context:
+    # Fetch images from S3 (or use cached)
+    multimodal_content, images_to_cache = await _build_multimodal_context(
+        document_context, s3_ops, writer, cached_images
+    )
+    
+    # Build message with interleaved text and images
+    context_content = [
+        {"type": "text", "text": MULTIMODAL_SYSTEM_PROMPT},
+        {"type": "text", "text": "--- DOCUMENT CONTENT AND IMAGES ---"},
+    ] + multimodal_content
+    
+    # Use vision-capable LLM (Gemini)
+    response = await Convo_Agent_LLM_Multimodal.ainvoke(messages)
+```
+
+This enables users to ask questions about images in PDFs, like "Describe the diagram on page 3" or "What does the chart on slide 5 show?"
+
 ---
 
 ## Development
@@ -364,6 +486,8 @@ uv run python src/test.py
 
 ## Roadmap
 
+### Completed
+
 - [x] Domain classification gate (gaming vs non-gaming)
 - [x] Conversational agent with gaming context
 - [x] PostgreSQL message logging
@@ -372,6 +496,24 @@ uv run python src/test.py
 - [x] FastAPI backend with SSE streaming
 - [x] Conversation history sidebar
 - [x] Markdown rendering in responses
+- [x] PDF document upload and processing
+- [x] PPTX (PowerPoint) document upload and processing
+- [x] AWS S3 file storage integration
+- [x] Multimodal conversations (text + images from documents)
+- [x] Image extraction and base64 conversion for LLM
+- [x] Image caching in conversation state
+- [x] Time travel / fork from checkpoint
+- [x] Progress streaming events during processing
+- [x] Document chunks stored in PostgreSQL
+- [x] File management API (upload, download, delete, status)
+
+### In Progress
+
+- [ ] Timeline panel UI for checkpoint navigation
+- [ ] File attachment display in messages
+
+### Planned
+
 - [ ] Integrate Qdrant for semantic game search
 - [ ] Add DuckDB for OLAP analytics queries
 - [ ] Connect Neo4j for player/team relationship graphs
@@ -379,6 +521,7 @@ uv run python src/test.py
 - [ ] Build specialized gaming analytics agents
 - [ ] Dark/Light mode toggle
 - [ ] User authentication
+- [ ] Vector search over document content
 
 ---
 
@@ -389,5 +532,5 @@ MIT License — See [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  <strong>Lumos Graph</strong> — Illuminating Gaming Insights with Intelligent Agents 💡
+  <strong>Lumos Graph</strong> — Illuminating Gaming Insights with Multimodal AI Agents 💡
 </p>
