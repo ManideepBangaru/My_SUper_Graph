@@ -12,7 +12,6 @@ import {
   streamFork,
   Thread,
   Message,
-  MessageAttachment,
   Checkpoint,
 } from "@/lib/api";
 
@@ -20,7 +19,6 @@ export interface ChatMessage {
   id: string;
   role: "human" | "ai";
   content: string;
-  attachments?: MessageAttachment[];
   isStreaming?: boolean;
 }
 
@@ -30,51 +28,47 @@ export function useChat(userId: string) {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [progressStatus, setProgressStatus] = useState<string | null>(null);
-  const abortControllerRef = useRef<AbortController | null>(null);
-  
+  // Prevents loadMessages from overwriting in-progress streaming state
+  const isStreamingRef = useRef(false);
+
   // Time travel state
   const [checkpoints, setCheckpoints] = useState<Checkpoint[]>([]);
   const [selectedCheckpoint, setSelectedCheckpoint] = useState<Checkpoint | null>(null);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
   const [showTimeline, setShowTimeline] = useState(false);
 
-  // Fetch threads on mount
   useEffect(() => {
     refreshThreads();
   }, [userId]);
 
-  // Load messages when thread changes
   useEffect(() => {
-    if (currentThreadId) {
-      loadMessages(currentThreadId);
-    } else {
+    if (!currentThreadId) {
       setMessages([]);
+      return;
+    }
+    // Skip DB load while streaming — streaming state owns the messages right now
+    if (!isStreamingRef.current) {
+      loadMessages(currentThreadId);
     }
   }, [currentThreadId]);
 
   const refreshThreads = useCallback(async () => {
     try {
-      const fetchedThreads = await fetchThreads(userId);
-      setThreads(fetchedThreads);
+      const fetched = await fetchThreads(userId);
+      setThreads(fetched);
     } catch (error) {
       console.error("Failed to fetch threads:", error);
-      // Show user-friendly error message
-      if (error instanceof Error) {
-        console.error(error.message);
-      }
     }
   }, [userId]);
 
   const loadMessages = async (threadId: string) => {
     try {
-      const fetchedMessages = await fetchMessages(threadId);
+      const fetched = await fetchMessages(threadId);
       setMessages(
-        fetchedMessages.map((msg: Message) => ({
-          // Use database id (guaranteed unique) as the key
+        fetched.map((msg: Message) => ({
           id: `db-${msg.id}`,
           role: msg.role,
           content: msg.content,
-          attachments: msg.attachments || [],
         }))
       );
     } catch (error) {
@@ -113,10 +107,8 @@ export function useChat(userId: string) {
     [currentThreadId]
   );
 
-  // Time travel: Load checkpoint history for current thread
   const loadHistory = useCallback(async () => {
     if (!currentThreadId) return;
-    
     setIsHistoryLoading(true);
     try {
       const history = await fetchThreadHistory(currentThreadId);
@@ -128,43 +120,39 @@ export function useChat(userId: string) {
     }
   }, [currentThreadId]);
 
-  // Time travel: Select a checkpoint to preview
-  const selectCheckpoint = useCallback((checkpoint: Checkpoint | null) => {
-    setSelectedCheckpoint(checkpoint);
-    
-    // If a checkpoint is selected, show its messages
-    if (checkpoint) {
-      const checkpointMessages: ChatMessage[] = checkpoint.messages.map((msg, idx) => ({
-        id: `checkpoint-${checkpoint.checkpoint_id}-${idx}`,
-        role: msg.role === "human" ? "human" : "ai",
-        content: msg.content,
-      }));
-      setMessages(checkpointMessages);
-    } else if (currentThreadId) {
-      // If deselected, reload current messages
-      loadMessages(currentThreadId);
-    }
-  }, [currentThreadId]);
+  const selectCheckpoint = useCallback(
+    (checkpoint: Checkpoint | null) => {
+      setSelectedCheckpoint(checkpoint);
+      if (checkpoint) {
+        setMessages(
+          checkpoint.messages.map((msg, idx) => ({
+            id: `checkpoint-${checkpoint.checkpoint_id}-${idx}`,
+            role: msg.role === "human" ? "human" : "ai",
+            content: msg.content,
+          }))
+        );
+      } else if (currentThreadId) {
+        loadMessages(currentThreadId);
+      }
+    },
+    [currentThreadId]
+  );
 
-  // Time travel: Fork from a checkpoint and send a new message
   const forkFromCheckpoint = useCallback(
-    async (content: string, checkpointId: string, attachments?: MessageAttachment[]) => {
+    async (content: string, checkpointId: string) => {
       if (!content.trim() || isLoading || !currentThreadId) return;
 
-      // Clear the selected checkpoint since we're forking
+      isStreamingRef.current = true;
       setSelectedCheckpoint(null);
-      
-      // Add user message with attachments
+
       const userMessage: ChatMessage = {
         id: `user-${Date.now()}`,
         role: "human",
         content,
-        attachments: attachments || [],
       };
       setMessages((prev) => [...prev, userMessage]);
       setIsLoading(true);
 
-      // Add placeholder for AI response
       const aiMessageId = `ai-${Date.now()}`;
       setMessages((prev) => [
         ...prev,
@@ -172,18 +160,15 @@ export function useChat(userId: string) {
       ]);
 
       try {
-        // Stream the forked response with attachments
-        for await (const event of streamFork(content, currentThreadId, userId, checkpointId, attachments)) {
+        for await (const event of streamFork(content, currentThreadId, userId, checkpointId)) {
           if (event.type === "progress") {
-            const progressData = event.content as Record<string, string>;
-            setProgressStatus(progressData?.Progress || JSON.stringify(progressData));
+            const p = event.content as Record<string, string>;
+            setProgressStatus(p?.Progress || JSON.stringify(p));
           } else if (event.type === "token") {
-            const tokenContent = typeof event.content === 'string' ? event.content : "";
+            const token = typeof event.content === "string" ? event.content : "";
             setMessages((prev) =>
               prev.map((msg) =>
-                msg.id === aiMessageId
-                  ? { ...msg, content: msg.content + tokenContent }
-                  : msg
+                msg.id === aiMessageId ? { ...msg, content: msg.content + token } : msg
               )
             );
           } else if (event.type === "done") {
@@ -195,18 +180,16 @@ export function useChat(userId: string) {
             );
           } else if (event.type === "error") {
             setProgressStatus(null);
-            const errorContent = typeof event.content === 'string' ? event.content : "Something went wrong";
+            const err = typeof event.content === "string" ? event.content : "Something went wrong";
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === aiMessageId
-                  ? { ...msg, content: `Error: ${errorContent}`, isStreaming: false }
+                  ? { ...msg, content: `Error: ${err}`, isStreaming: false }
                   : msg
               )
             );
           }
         }
-
-        // Refresh history after forking
         await loadHistory();
         await refreshThreads();
       } catch (error) {
@@ -220,6 +203,7 @@ export function useChat(userId: string) {
           )
         );
       } finally {
+        isStreamingRef.current = false;
         setIsLoading(false);
         setProgressStatus(null);
       }
@@ -227,38 +211,24 @@ export function useChat(userId: string) {
     [currentThreadId, isLoading, userId, loadHistory, refreshThreads]
   );
 
-  // Toggle timeline visibility
   const toggleTimeline = useCallback(() => {
     setShowTimeline((prev) => {
-      const newValue = !prev;
-      // Load history when opening timeline
-      if (newValue && currentThreadId) {
-        loadHistory();
-      }
-      return newValue;
+      const next = !prev;
+      if (next && currentThreadId) loadHistory();
+      return next;
     });
   }, [currentThreadId, loadHistory]);
 
-  // Edit a user message and regenerate the response
   const editMessage = useCallback(
     async (newContent: string, messageIndex: number) => {
       if (!newContent.trim() || isLoading || !currentThreadId) return;
 
-      // Get the original message's attachments to preserve them
-      const originalMessage = messages[messageIndex];
-      const originalAttachments = originalMessage?.attachments || [];
-
-      // First, truncate messages in the database to clean up stale messages
-      // This ensures that when we reload, we only see messages up to the edit point
       try {
         await truncateMessages(currentThreadId, messageIndex);
       } catch (error) {
         console.error("Failed to truncate messages:", error);
-        // Continue anyway - UI will still work, just reload might show old messages
       }
 
-      // Find the checkpoint that corresponds to the state just before this message
-      // We need to load history first if not already loaded
       let history = checkpoints;
       if (history.length === 0) {
         try {
@@ -269,42 +239,22 @@ export function useChat(userId: string) {
         }
       }
 
-      // Count how many messages we need to keep (messages before the edited one)
-      // The edited message is at messageIndex, so we want the state with messageIndex messages
-      const targetMessageCount = messageIndex;
+      const targetCheckpoint = history.find((cp) => cp.messages.length === messageIndex);
 
-      // Find the checkpoint with the right number of messages (state just before edited message)
-      // Checkpoints are ordered newest to oldest, so we look for one with targetMessageCount messages
-      let targetCheckpoint = history.find(cp => cp.messages.length === targetMessageCount);
-      
       if (targetCheckpoint) {
-        // We found the exact checkpoint - fork from it
-        // Truncate messages to show only up to the edited message point
-        const truncatedMessages = messages.slice(0, messageIndex);
-        setMessages(truncatedMessages);
-        
-        // Now fork from that checkpoint with the new content and original attachments
-        await forkFromCheckpoint(newContent, targetCheckpoint.checkpoint_id, originalAttachments);
+        setMessages(messages.slice(0, messageIndex));
+        await forkFromCheckpoint(newContent, targetCheckpoint.checkpoint_id);
       } else {
-        // No exact checkpoint found - use a simpler approach:
-        // Truncate the UI messages and send as a regular message
-        // This happens when we don't have granular checkpoints
-        
-        // Truncate messages to before the edited message
-        const truncatedMessages = messages.slice(0, messageIndex);
-        setMessages(truncatedMessages);
-        
-        // Add the new user message with original attachments
+        setMessages(messages.slice(0, messageIndex));
+
         const userMessage: ChatMessage = {
           id: `user-${Date.now()}`,
           role: "human",
           content: newContent,
-          attachments: originalAttachments,
         };
         setMessages((prev) => [...prev, userMessage]);
         setIsLoading(true);
 
-        // Add placeholder for AI response
         const aiMessageId = `ai-${Date.now()}`;
         setMessages((prev) => [
           ...prev,
@@ -312,18 +262,15 @@ export function useChat(userId: string) {
         ]);
 
         try {
-          // Stream chat with original attachments preserved
-          for await (const event of streamChat(newContent, currentThreadId, userId, originalAttachments)) {
+          for await (const event of streamChat(newContent, currentThreadId, userId)) {
             if (event.type === "progress") {
-              const progressData = event.content as Record<string, string>;
-              setProgressStatus(progressData?.Progress || JSON.stringify(progressData));
+              const p = event.content as Record<string, string>;
+              setProgressStatus(p?.Progress || JSON.stringify(p));
             } else if (event.type === "token") {
-              const tokenContent = typeof event.content === 'string' ? event.content : "";
+              const token = typeof event.content === "string" ? event.content : "";
               setMessages((prev) =>
                 prev.map((msg) =>
-                  msg.id === aiMessageId
-                    ? { ...msg, content: msg.content + tokenContent }
-                    : msg
+                  msg.id === aiMessageId ? { ...msg, content: msg.content + token } : msg
                 )
               );
             } else if (event.type === "done") {
@@ -335,11 +282,11 @@ export function useChat(userId: string) {
               );
             } else if (event.type === "error") {
               setProgressStatus(null);
-              const errorContent = typeof event.content === 'string' ? event.content : "Something went wrong";
+              const err = typeof event.content === "string" ? event.content : "Something went wrong";
               setMessages((prev) =>
                 prev.map((msg) =>
                   msg.id === aiMessageId
-                    ? { ...msg, content: `Error: ${errorContent}`, isStreaming: false }
+                    ? { ...msg, content: `Error: ${err}`, isStreaming: false }
                     : msg
                 )
               );
@@ -367,10 +314,12 @@ export function useChat(userId: string) {
   );
 
   const sendMessage = useCallback(
-    async (content: string, attachments?: MessageAttachment[]) => {
+    async (content: string) => {
       if (!content.trim() || isLoading) return;
 
-      // Create thread if none exists
+      // Mark as streaming BEFORE any setState that could trigger useEffect
+      isStreamingRef.current = true;
+
       let threadId = currentThreadId;
       if (!threadId) {
         try {
@@ -384,17 +333,14 @@ export function useChat(userId: string) {
         }
       }
 
-      // Add user message with attachments
       const userMessage: ChatMessage = {
         id: `user-${Date.now()}`,
         role: "human",
         content,
-        attachments: attachments || [],
       };
       setMessages((prev) => [...prev, userMessage]);
       setIsLoading(true);
 
-      // Add placeholder for AI response
       const aiMessageId = `ai-${Date.now()}`;
       setMessages((prev) => [
         ...prev,
@@ -402,74 +348,60 @@ export function useChat(userId: string) {
       ]);
 
       try {
-        // Stream the response with attachments
-        for await (const event of streamChat(content, threadId, userId, attachments)) {
+        for await (const event of streamChat(content, threadId, userId)) {
           if (event.type === "progress") {
-            // Handle progress events from custom stream writer
-            const progressData = event.content as Record<string, string>;
-            setProgressStatus(progressData?.Progress || JSON.stringify(progressData));
+            const p = event.content as Record<string, string>;
+            setProgressStatus(p?.Progress || JSON.stringify(p));
           } else if (event.type === "token") {
-            const tokenContent = typeof event.content === 'string' ? event.content : "";
+            const token = typeof event.content === "string" ? event.content : "";
             setMessages((prev) =>
               prev.map((msg) =>
-                msg.id === aiMessageId
-                  ? { ...msg, content: msg.content + tokenContent }
-                  : msg
+                msg.id === aiMessageId ? { ...msg, content: msg.content + token } : msg
               )
             );
           } else if (event.type === "message") {
-            // Full message received (fallback for non-streaming)
-            const messageContent = typeof event.content === 'string' ? event.content : "";
+            const msgContent = typeof event.content === "string" ? event.content : "";
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === aiMessageId
-                  ? { ...msg, content: messageContent, isStreaming: false }
+                  ? { ...msg, content: msgContent, isStreaming: false }
                   : msg
               )
             );
           } else if (event.type === "done") {
-            setProgressStatus(null); // Clear progress on completion
+            setProgressStatus(null);
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === aiMessageId ? { ...msg, isStreaming: false } : msg
               )
             );
           } else if (event.type === "error") {
-            setProgressStatus(null); // Clear progress on error
-            const errorContent = typeof event.content === 'string' ? event.content : "Something went wrong";
+            setProgressStatus(null);
+            const err = typeof event.content === "string" ? event.content : "Something went wrong";
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === aiMessageId
-                  ? {
-                      ...msg,
-                      content: `Error: ${errorContent}`,
-                      isStreaming: false,
-                    }
+                  ? { ...msg, content: `Error: ${err}`, isStreaming: false }
                   : msg
               )
             );
           }
         }
-
-        // Refresh threads to update title
         await refreshThreads();
       } catch (error) {
         console.error("Failed to send message:", error);
-        setProgressStatus(null); // Clear progress on failure
+        setProgressStatus(null);
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === aiMessageId
-              ? {
-                  ...msg,
-                  content: "Failed to get response. Please try again.",
-                  isStreaming: false,
-                }
+              ? { ...msg, content: "Failed to get response. Please try again.", isStreaming: false }
               : msg
           )
         );
       } finally {
+        isStreamingRef.current = false;
         setIsLoading(false);
-        setProgressStatus(null); // Ensure progress is cleared
+        setProgressStatus(null);
       }
     },
     [currentThreadId, isLoading, userId, refreshThreads]
@@ -487,7 +419,6 @@ export function useChat(userId: string) {
     selectThread,
     deleteThread,
     refreshThreads,
-    // Time travel
     checkpoints,
     selectedCheckpoint,
     isHistoryLoading,

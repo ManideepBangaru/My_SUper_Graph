@@ -1,4 +1,4 @@
-# Lumos Graph 🎮✨
+# Super Graph 🎮✨
 
 A multi-agent architecture powered by **LangGraph** for intelligent gaming analytics with multimodal document understanding. This system routes user queries to specialized agents using LLM-driven decision making, featuring a modern ChatGPT-style web interface with document upload and visual comprehension capabilities.
 
@@ -6,7 +6,7 @@ A multi-agent architecture powered by **LangGraph** for intelligent gaming analy
 
 ## Overview
 
-Lumos Graph is designed to enhance conversational AI capabilities for gaming analytics by implementing an intelligent routing system. Instead of hardcoded rules or regex patterns, queries are classified and routed using LLM-based structured outputs, enabling natural and context-aware interactions. The system now supports **multimodal conversations** with PDF and PowerPoint documents, extracting both text and images for comprehensive document understanding.
+Super Graph is designed to enhance conversational AI capabilities for gaming analytics by implementing an intelligent routing system. Instead of hardcoded rules or regex patterns, queries are classified and routed using LLM-based structured outputs, enabling natural and context-aware interactions. The system now supports **multimodal conversations** with PDF and PowerPoint documents, extracting both text and images for comprehensive document understanding.
 
 ### Key Features
 
@@ -128,7 +128,7 @@ Lumos Graph is designed to enhance conversational AI capabilities for gaming ana
 ## Project Structure
 
 ```
-Lumos_Graph/
+Super_Graph/
 ├── src/
 │   ├── api/                          # FastAPI Backend
 │   │   ├── main.py                   # FastAPI app with CORS and routes
@@ -199,7 +199,7 @@ Lumos_Graph/
 
 1. **Clone the repository**
    ```bash
-   cd Lumos_Graph
+   cd Super_Graph
    ```
 
 2. **Install backend dependencies**
@@ -231,7 +231,7 @@ Lumos_Graph/
    # AWS S3 Configuration (for file storage)
    AWS_PROFILE=your-sso-profile          # AWS SSO profile name
    S3_BUCKET_NAME=your-bucket-name       # S3 bucket for file storage
-   S3_PREFIX=lumos-graph                 # Optional prefix for S3 keys
+   S3_PREFIX=Super-graph                 # Optional prefix for S3 keys
    ```
 
 ### Running the Application
@@ -532,5 +532,5 @@ MIT License — See [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  <strong>Lumos Graph</strong> — Illuminating Gaming Insights with Multimodal AI Agents 💡
+  <strong>Super Graph</strong> — Illuminating Gaming Insights with Multimodal AI Agents 💡
 </p>

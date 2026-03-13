@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.database import setup_tables
-from src.api.routes import chat, files, threads
+from src.api.routes import chat, threads
 
 
 @asynccontextmanager
@@ -42,7 +42,6 @@ app.add_middleware(
 
 # Include routers
 app.include_router(chat.router)
-app.include_router(files.router)
 app.include_router(threads.router)
 
 

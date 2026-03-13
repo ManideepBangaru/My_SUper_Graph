@@ -4,13 +4,11 @@ import { useState, useRef, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { User, Gamepad2, Pencil, Check, X, FileText } from "lucide-react";
-import type { MessageAttachment } from "@/lib/api";
+import { User, Bot, Pencil, Check, X } from "lucide-react";
 
 interface MessageBubbleProps {
   role: "human" | "ai";
   content: string;
-  attachments?: MessageAttachment[];
   isStreaming?: boolean;
   progressStatus?: string | null;
   messageIndex?: number;
@@ -18,17 +16,9 @@ interface MessageBubbleProps {
   onEdit?: (newContent: string, messageIndex: number) => void;
 }
 
-// Format file size for display
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 export function MessageBubble({
   role,
   content,
-  attachments,
   isStreaming,
   progressStatus,
   messageIndex = 0,
@@ -39,7 +29,6 @@ export function MessageBubble({
   const [isEditing, setIsEditing] = useState(false);
   const [editedContent, setEditedContent] = useState(content);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const hasAttachments = attachments && attachments.length > 0;
 
   // Focus textarea when entering edit mode
   useEffect(() => {
@@ -88,34 +77,12 @@ export function MessageBubble({
 
   return (
     <div className={`group flex flex-col gap-2 message-enter ${isUser ? "items-end" : "items-start"}`}>
-      {/* File Attachments - displayed above the message */}
-      {hasAttachments && (
-        <div className={`flex flex-wrap gap-2 ${isUser ? "mr-14" : "ml-14"}`}>
-          {attachments.map((file, idx) => (
-            <div
-              key={`${file.filename}-${idx}`}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs
-                bg-surface-secondary border border-neon-cyan/30 text-text-primary
-                hover:border-neon-cyan/50 transition-colors"
-            >
-              <FileText className="w-4 h-4 flex-shrink-0 text-neon-cyan" />
-              <span className="max-w-[150px] truncate font-medium">
-                {file.filename}
-              </span>
-              <span className="text-text-secondary">
-                {formatFileSize(file.size)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* Message row with avatars */}
       <div className={`flex gap-4 w-full ${isUser ? "justify-end" : ""}`}>
         {/* Avatar for AI */}
         {!isUser && (
           <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-gaming-gradient flex items-center justify-center">
-            <Gamepad2 className="w-5 h-5 text-surface" />
+            <Bot className="w-5 h-5 text-surface" />
           </div>
         )}
 

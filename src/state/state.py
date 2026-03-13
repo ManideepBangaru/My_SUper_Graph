@@ -9,10 +9,7 @@ def add_to_conversation(existing: List[str], new: List[str]) -> List[str]:
     return (existing or []) + (new or [])
 
 
-# State schema for the graph (input + accumulated state)
 class MainGraphState(TypedDict):
     messages: Annotated[List[AnyMessage], add_messages]
     conversation_history: Annotated[List[str], add_to_conversation]
-    document_context: Optional[List[dict]]  # Processed PDF chunks for context
-    cached_images: Optional[dict]  # Cached base64 images keyed by "filename:page_num"
-    Approval: Optional[bool]
+    domain: Optional[str]  # "games", "movies", or "none"

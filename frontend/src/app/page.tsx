@@ -6,7 +6,6 @@ import { ChatWindow } from "@/components/ChatWindow";
 import { TimelinePanel } from "@/components/TimelinePanel";
 import { useChat } from "@/hooks/useChat";
 
-// For demo purposes, use a fixed user ID
 const USER_ID = "user_demo";
 
 export default function Home() {
@@ -23,7 +22,6 @@ export default function Home() {
     selectThread,
     deleteThread,
     refreshThreads,
-    // Time travel
     checkpoints,
     selectedCheckpoint,
     isHistoryLoading,
@@ -36,11 +34,6 @@ export default function Home() {
   const handleNewChat = useCallback(async () => {
     await createNewThread();
   }, [createNewThread]);
-
-  const handleThreadCreatedFromUpload = useCallback(async (threadId: string) => {
-    selectThread(threadId);
-    await refreshThreads();
-  }, [selectThread, refreshThreads]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-surface cyber-grid hex-pattern">
@@ -75,12 +68,9 @@ export default function Home() {
             onEditMessage={editMessage}
             onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
             sidebarOpen={sidebarOpen}
-            userId={USER_ID}
-            threadId={currentThreadId}
-            onThreadCreated={handleThreadCreatedFromUpload}
           />
         </div>
-        
+
         {/* Time Travel Panel */}
         {showTimeline && (
           <TimelinePanel
