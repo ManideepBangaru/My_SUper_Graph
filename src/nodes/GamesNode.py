@@ -9,6 +9,7 @@ except ImportError:
     from src.utils.message_logger import MessageLogger
     from src.utils.read_yaml import read_yaml
 
+import asyncio
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage
 from langchain.chat_models import init_chat_model
@@ -35,7 +36,8 @@ async def GamesAgent(state: MainGraphState, config: RunnableConfig):
     All configuration is loaded from prompts/games_node.yaml.
     """
     writer = get_stream_writer()
-    writer({"Progress": "Games agent initiated ..."})
+    writer({"Progress": "Games Agent at Work ..."})
+    await asyncio.sleep(2)
 
     user_id = config["configurable"]["user_id"]
     thread_id = config["configurable"]["thread_id"]

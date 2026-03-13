@@ -9,6 +9,7 @@ except ImportError:
     from src.utils.message_logger import MessageLogger
     from src.utils.read_yaml import read_yaml
 
+import asyncio
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import AIMessage
 from langchain.chat_models import init_chat_model
@@ -37,7 +38,7 @@ async def GateAgent(state: MainGraphState, config: RunnableConfig):
     All configuration is loaded from prompts/gate_node.yaml.
     """
     writer = get_stream_writer()
-    writer({"Progress": "Domain check initiated ..."})
+    writer({"Progress": "Query Analysis initiated ..."})
 
     user_id = config["configurable"]["user_id"]
     thread_id = config["configurable"]["thread_id"]
@@ -47,7 +48,7 @@ async def GateAgent(state: MainGraphState, config: RunnableConfig):
     )
 
     domain = response.domain
-    writer({"Progress": f"Domain detected: {domain}"})
+    writer({"Progress": f"Query Analysis completed: {domain}"})
 
     if domain == "none":
         await message_logger.log_message(
@@ -63,4 +64,6 @@ async def GateAgent(state: MainGraphState, config: RunnableConfig):
         }
 
     writer({"Progress": f"Routing to {domain} agent 🚀"})
+    await asyncio.sleep(2)
+    writer({"Progress": f"Handed over to the {domain} agent 🚀"})
     return {"domain": domain}
